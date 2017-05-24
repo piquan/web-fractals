@@ -46,7 +46,6 @@ function setup() {
         return;
     }
     var size = Math.min(window.innerWidth, window.innerHeight);
-    renderer.context.disable(renderer.context.DEPTH_TEST);
     renderer.autoClear = false;
     renderer.setSize(size, size);
     document.body.appendChild(renderer.domElement);
@@ -60,29 +59,7 @@ function setup() {
 
     camera = new THREE.OrthographicCamera(
         -1, 1, 1, -1, 0.1, 1000);
-
-    main = {};
-    main.scene = new THREE.Scene();
-
-    main.marker = {};
-    main.marker.geo = new THREE.CircleGeometry(0.02);
-    main.marker.mat = new THREE.MeshBasicMaterial({color: 0xff0000});
-    main.marker.obj = new THREE.Mesh(main.marker.geo, main.marker.mat);
-    main.marker.obj.position.z = 1.0;
-    main.scene.add(main.marker.obj);
-
-    main.juliaPlane = {};
-    main.juliaPlane.geo = new THREE.PlaneBufferGeometry(2, 2);
-    main.juliaPlane.mat = new THREE.ShaderMaterial({
-        uniforms: { julia_c: new THREE.Vector2(0.0, 0.0),
-                    do_mandelbrot: 0 },
-        vertexShader: shaderSrc.julia_vs,
-        fragmentShader: shaderSrc.shader_lib + shaderSrc.julia_fs
-    });
-    main.juliaPlane.obj = new THREE.Mesh(main.juliaPlane.geo,
-                                         main.juliaPlane.mat);
-    main.juliaPlane.obj.position.z = 0.0;
-    main.scene.add(main.juliaPlane.obj);
+    camera.position.z = 2;
 
     mandelbrot = {};
     mandelbrot.scene = new THREE.Scene();
@@ -96,18 +73,30 @@ function setup() {
         mandelbrot.target, true, true, true);
 
     mandelbrot.point = {};
-    mandelbrot.point.geo = new THREE.Geometry();
-    mandelbrot.point.geo.vertices.push(new THREE.Vector3(0.0, 0.0, 0.0));
-    mandelbrot.point.fsmat = new THREE.ShaderMaterial({
-        uniforms: { julia_c: new THREE.Vector2(0.0, 0.0),
-                    do_mandelbrot: 0 },
+    mandelbrot.point.geo = new THREE.CircleGeometry(0.01);
+    mandelbrot.point.mat = new THREE.ShaderMaterial({
         vertexShader: shaderSrc.shader_lib + shaderSrc.mandelbrot_vs,
-        fragmentShader: shaderSrc.mandelbrot_fs
+        fragmentShader: shaderSrc.shader_lib + shaderSrc.mandelbrot_fs
     });
-    mandelbrot.point.obj = new THREE.Points(mandelbrot.point.geo,
-                                            mandelbrot.point.fsmat);
+    mandelbrot.point.obj = new THREE.Mesh(mandelbrot.point.geo,
+                                          mandelbrot.point.mat);
     mandelbrot.scene.add(mandelbrot.point.obj);
     mandelbrot.point.obj.position.z = 1;
+
+    main = {};
+    main.scene = new THREE.Scene();
+
+    main.juliaPlane = {};
+    main.juliaPlane.geo = new THREE.PlaneBufferGeometry(2, 2);
+    main.juliaPlane.mat = new THREE.ShaderMaterial({
+        uniforms: { julia_c: new THREE.Vector2(0.0, 0.0) },
+        vertexShader: shaderSrc.shader_lib + shaderSrc.julia_vs,
+        fragmentShader: shaderSrc.shader_lib + shaderSrc.julia_fs
+    });
+    main.juliaPlane.obj = new THREE.Mesh(main.juliaPlane.geo,
+                                         main.juliaPlane.mat);
+    main.juliaPlane.obj.position.z = 0.0;
+    main.scene.add(main.juliaPlane.obj);
 
     //var testCard = new THREE.TextureLoader().load("test_card.png");
     main.mandelbrotPlane = {};
@@ -115,13 +104,28 @@ function setup() {
     main.mandelbrotPlane.mat = new THREE.MeshBasicMaterial({
         map: mandelbrot.target.texture
     });
+    // This blending equation is necessary if we're using linear
+    // filtering, which we do in some of these experiments.
+    // Otherwise, the (0,0,0,0) pixels near the parts we haven't
+    // rendered blend with useful data in the parts we have, and we've
+    // got trouble.  For this to work, we need premultiplied alpha,
+    // but we do have that.
+    main.mandelbrotPlane.mat.blending = THREE.CustomBlending;
+    main.mandelbrotPlane.mat.blendEquation = THREE.AddEquation;
+    main.mandelbrotPlane.mat.blendSrc = THREE.OneFactor;
+    main.mandelbrotPlane.mat.blendDst = THREE.OneMinusSrcAlphaFactor;
     main.mandelbrotPlane.mat.transparent = true;
     main.mandelbrotPlane.obj = new THREE.Mesh(main.mandelbrotPlane.geo,
                                               main.mandelbrotPlane.mat);
     main.mandelbrotPlane.obj.position.z = 0.5;
     main.scene.add(main.mandelbrotPlane.obj);
 
-    camera.position.z = 2;
+    main.marker = {};
+    main.marker.geo = new THREE.CircleGeometry(0.01);
+    main.marker.mat = new THREE.MeshBasicMaterial({color: 0xff0000});
+    main.marker.obj = new THREE.Mesh(main.marker.geo, main.marker.mat);
+    main.marker.obj.position.z = 1.0;
+    main.scene.add(main.marker.obj);
 
     if (window.Stats) {
         stats = new Stats();
@@ -149,8 +153,12 @@ function setupMouseHandlers() {
     });
 }
 
+var previous_x = null;
+var previous_y = null;
+
 function render(now) {
     if (stats) stats.begin();
+
     var x, y;
     if (mouseX === null || mouseX > 1.0) {
         now /= 1000.0;
@@ -169,9 +177,16 @@ function render(now) {
     main.juliaPlane.mat.uniforms.julia_c.value = new THREE.Vector2(x, y);
     main.marker.obj.position.x = x;
     main.marker.obj.position.y = y;
-    if (mandelbrot.point.fsmat) {
-        mandelbrot.point.fsmat.uniforms.julia_c.value = new THREE.Vector2(x, y);
-    }
+    //if (previous_x !== null) {
+    //    mandelbrot.point.geo.vertices[0].x = x;
+    //    mandelbrot.point.geo.vertices[0].y = y;
+    //    mandelbrot.point.geo.vertices[1].x = previous_x;
+    //    mandelbrot.point.geo.vertices[1].y = previous_y;
+    //    mandelbrot.point.geo.verticesNeedUpdate = true;
+    //    mandelbrot.point.geo.computeLineDistances();
+    //}
+    //previous_x = x;
+    //previous_y = y;
     mandelbrot.point.obj.position.x = x;
     mandelbrot.point.obj.position.y = y;
 

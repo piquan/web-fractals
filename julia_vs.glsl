@@ -13,7 +13,9 @@
 
 varying vec2 uvfrag;
 
-void main() {
+void
+main()
+{
     uvfrag = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
