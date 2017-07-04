@@ -2,7 +2,27 @@
 
 var phi = (1 + Math.sqrt(5)) / 2.0;
 
-var stats;
+var toggleKeys = {" ": "pause", "p": "paint", "a": "auto",
+                  "m": "mouse", "s": "stats", "M": "mandelbrot"};
+var defaultOptions = {
+    stats: false,
+    paint: false,
+    auto: true,
+    mouse: true,
+    pause: false,
+    mandelbrot: false
+};
+var options = defaultOptions;
+
+var framePending = false;
+function update() {
+    if (!framePending) {
+        requestAnimationFrame(render);
+        framePending = true;
+    }
+}
+
+var stats = null;
 var renderer;
 var camera;
 var main;
@@ -22,7 +42,7 @@ $(function() {
         if (filecount == 0) {
             setup();
             setupMouseHandlers();
-            render();
+            update();
         }
     };
     for (var key in shaderSrc) {
@@ -68,12 +88,12 @@ function setup() {
         1024, 1024,
         { minFilter: THREE.NearestFilter,
           magFilter: THREE.NearestFilter });
-    renderer.setClearColor(new THREE.Color('magenta'), 0.0);
+    renderer.setClearColor(new THREE.Color('black'), 0.0);
     renderer.clearTarget(
         mandelbrot.target, true, true, true);
 
     mandelbrot.point = {};
-    mandelbrot.point.geo = new THREE.CircleGeometry(0.01);
+    mandelbrot.point.geo = new THREE.Geometry();
     mandelbrot.point.mat = new THREE.ShaderMaterial({
         vertexShader: shaderSrc.shader_lib + shaderSrc.mandelbrot_vs,
         fragmentShader: shaderSrc.shader_lib + shaderSrc.mandelbrot_fs
@@ -99,9 +119,9 @@ function setup() {
     main.scene.add(main.juliaPlane.obj);
 
     //var testCard = new THREE.TextureLoader().load("test_card.png");
-    main.mandelbrotPlane = {};
-    main.mandelbrotPlane.geo = new THREE.PlaneBufferGeometry(2, 2);
-    main.mandelbrotPlane.mat = new THREE.MeshBasicMaterial({
+    main.mandelbrotPaintPlane = {};
+    main.mandelbrotPaintPlane.geo = new THREE.PlaneBufferGeometry(2, 2);
+    main.mandelbrotPaintPlane.mat = new THREE.MeshBasicMaterial({
         map: mandelbrot.target.texture
     });
     // This blending equation is necessary if we're using linear
@@ -110,15 +130,23 @@ function setup() {
     // rendered blend with useful data in the parts we have, and we've
     // got trouble.  For this to work, we need premultiplied alpha,
     // but we do have that.
-    main.mandelbrotPlane.mat.blending = THREE.CustomBlending;
-    main.mandelbrotPlane.mat.blendEquation = THREE.AddEquation;
-    main.mandelbrotPlane.mat.blendSrc = THREE.OneFactor;
-    main.mandelbrotPlane.mat.blendDst = THREE.OneMinusSrcAlphaFactor;
-    main.mandelbrotPlane.mat.transparent = true;
-    main.mandelbrotPlane.obj = new THREE.Mesh(main.mandelbrotPlane.geo,
-                                              main.mandelbrotPlane.mat);
-    main.mandelbrotPlane.obj.position.z = 0.5;
-    main.scene.add(main.mandelbrotPlane.obj);
+    main.mandelbrotPaintPlane.mat.blending = THREE.CustomBlending;
+    main.mandelbrotPaintPlane.mat.blendEquation = THREE.AddEquation;
+    main.mandelbrotPaintPlane.mat.blendSrc = THREE.OneFactor;
+    main.mandelbrotPaintPlane.mat.blendDst = THREE.OneMinusSrcAlphaFactor;
+    main.mandelbrotPaintPlane.mat.transparent = true;
+    main.mandelbrotPaintPlane.obj = new THREE.Mesh(
+        main.mandelbrotPaintPlane.geo, main.mandelbrotPaintPlane.mat);
+    main.mandelbrotPaintPlane.obj.position.z = 0.5;
+    //main.scene.add(main.mandelbrotPaintPlane.obj);
+
+    main.mandelbrotFullPlane = {};
+    main.mandelbrotFullPlane.geo = new THREE.PlaneBufferGeometry(2, 2);
+    main.mandelbrotFullPlane.mat = mandelbrot.point.mat;
+    main.mandelbrotFullPlane.obj = new THREE.Mesh(main.mandelbrotFullPlane.geo,
+                                                  main.mandelbrotFullPlane.mat);
+    main.mandelbrotFullPlane.obj.position.z = 0.8;
+    //mandelbrot.scene.add(main.mandelbrotFullPlane.obj);
 
     main.marker = {};
     main.marker.geo = new THREE.CircleGeometry(0.01);
@@ -127,21 +155,89 @@ function setup() {
     main.marker.obj.position.z = 1.0;
     main.scene.add(main.marker.obj);
 
-    if (window.Stats) {
-        stats = new Stats();
-        stats.showPanel(0);         // 0: fps, 1: ms, 2: mb, 3+: custom
-        document.body.appendChild(stats.dom);
+    $(window).on("keypress", handleKeyPress);
+    $(window).on("hashchange", handleOptions);
+    handleOptions();
+}
+
+function handleOptions() {
+    var oldOptions = options;
+
+    options = Object.assign({}, defaultOptions,
+                            new URI(window.location).fragment(true));
+
+    if (options.stats != oldOptions.stats) {
+        if (options.stats) {
+            stats = new Stats();
+            stats.showPanel(0);         // 0: fps, 1: ms, 2: mb, 3+: custom
+            document.body.appendChild(stats.dom);
+        } else {
+            $(stats.dom).remove();
+            stats = null;
+        }
     }
+
+    if (options.paint != oldOptions.paint) {
+        if (options.paint) {
+            main.scene.add(main.mandelbrotPaintPlane.obj);
+        } else {
+            main.scene.remove(main.mandelbrotPaintPlane.obj);
+        }
+    }
+
+    if (options.mandelbrot != oldOptions.mandelbrot) {
+        if (options.mandelbrot) {
+            main.scene.add(main.mandelbrotFullPlane.obj);
+        } else {
+            main.scene.remove(main.mandelbrotFullPlane.obj);
+        }
+    }
+
+    if (!options.pause)
+        update();
+}
+
+function handleKeyPress(e) {
+    var loc = new URI(window.location);
+
+    for (var key in toggleKeys) {
+        if (e.key == key) {
+            var opt = toggleKeys[key];
+            loc.removeFragment(opt);
+            if (options[opt]) {
+                loc.addFragment(opt, "");
+            } else {
+                loc.addFragment(opt, "1");
+            }
+        }
+    }
+
+    if (e.key == "C") {
+        renderer.setClearColor(new THREE.Color('black'), 0.0);
+        renderer.clearTarget(
+            mandelbrot.target, true, true, true);
+        update();
+    }
+
+    window.location = loc;
 }
 
 var mouseX = null;
 var mouseY = null;
 
+var previous_x = null;
+var previous_y = null;
+
 function handleMouseMove(e) {
     var size = Math.min(window.innerWidth, window.innerHeight);
+    if (mouseX === null) {
+        previous_x = null;
+        previous_y = null;
+    }
     mouseX = 1.0 * e.clientX / size * 2.0 - 1.0;
     mouseY = 1.0 - 1.0 * e.clientY / size * 2.0;
-    requestAnimationFrame(render);
+    if (!options.pause)
+        update();
 }
 function setupMouseHandlers() {
     $(document).mousemove(handleMouseMove);
@@ -149,48 +245,68 @@ function setupMouseHandlers() {
     $(document).mouseleave(function(e) {
         mouseX = null;
         mouseY = null;
-        requestAnimationFrame(render);
+        previous_x = null;
+        previous_y = null;
+        if (!options.pause)
+            update();
     });
 }
 
-var previous_x = null;
-var previous_y = null;
-
 function render(now) {
+    framePending = false;
+
     if (stats) stats.begin();
 
     var x, y;
-    if (mouseX === null || mouseX > 1.0) {
+    if (options.auto && (!options.mouse || mouseX === null || mouseX > 1.0)) {
+        if (!options.pause)
+            update();
         now /= 1000.0;
         //var rSqrt = Math.cos(now * 0.23);
         //var r = rSqrt * rSqrt;
         //x = r * Math.cos(now);
         //y = r * Math.sin(now);
-        x = Math.cos(now);
-        y = Math.sin(now / phi);
-        requestAnimationFrame(render);
-    } else {
+        //x = Math.cos(now * phi);
+        //y = Math.sin(now / phi);
+        x = Math.cos(now * phi);
+        y = Math.sin(now);
+    } else if (options.mouse) {
         x = mouseX;
         y = mouseY;
+    } else {
+        x = previous_x;
+        y = previous_y;
     }
 
     main.juliaPlane.mat.uniforms.julia_c.value = new THREE.Vector2(x, y);
     main.marker.obj.position.x = x;
     main.marker.obj.position.y = y;
-    //if (previous_x !== null) {
-    //    mandelbrot.point.geo.vertices[0].x = x;
-    //    mandelbrot.point.geo.vertices[0].y = y;
-    //    mandelbrot.point.geo.vertices[1].x = previous_x;
-    //    mandelbrot.point.geo.vertices[1].y = previous_y;
-    //    mandelbrot.point.geo.verticesNeedUpdate = true;
-    //    mandelbrot.point.geo.computeLineDistances();
-    //}
-    //previous_x = x;
-    //previous_y = y;
-    mandelbrot.point.obj.position.x = x;
-    mandelbrot.point.obj.position.y = y;
 
-    renderer.render(mandelbrot.scene, camera, mandelbrot.target, false);
+    if (options.paint &&
+        (previous_x !== null && !(x == previous_x && y == previous_y))) {
+        var shape = new THREE.Shape();
+        if ((previous_x < x) == (previous_y < y)) {
+            shape.moveTo(previous_x - 0.005, previous_y + 0.005);
+            shape.lineTo(x - 0.005, y + 0.005);
+            shape.lineTo(x + 0.005, y - 0.005);
+            shape.lineTo(previous_x + 0.005, previous_y - 0.005);
+        } else {
+            shape.moveTo(previous_x - 0.005, previous_y - 0.005);
+            shape.lineTo(x - 0.005, y - 0.005);
+            shape.lineTo(x + 0.005, y + 0.005);
+            shape.lineTo(previous_x + 0.005, previous_y + 0.005);
+        }
+        mandelbrot.point.geo = new THREE.ShapeGeometry(shape);
+        mandelbrot.point.obj.geometry = mandelbrot.point.geo;
+    }
+    previous_x = x;
+    previous_y = y;
+
+    if (options.paint)
+        renderer.render(mandelbrot.scene, camera, mandelbrot.target, false);
     renderer.render(main.scene, camera, null, true);
     if (stats) stats.end();
+
+    if (!options.pause && options.auto && (!options.mouse || mouseX === null || mouseX > 1.0))
+        update();
 }
