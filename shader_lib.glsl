@@ -28,6 +28,8 @@ iterate(vec2 c, vec2 z)
     int i = 0;
     for (int j = 0; j < enough; j++) {
         z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+        //z.x = cos(z.x) + c.x;
+        //z.y = sin(z.y) + c.y;
         vec2 diff = z - c;
         float dist2 = diff.x * diff.x + diff.y * diff.y; // |z-c|^2
         if (dist2 > 4.0)

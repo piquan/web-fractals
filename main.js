@@ -150,7 +150,7 @@ function setup() {
 
     main.marker = {};
     main.marker.geo = new THREE.CircleGeometry(0.01);
-    main.marker.mat = new THREE.MeshBasicMaterial({color: 0xff0000});
+    main.marker.mat = new THREE.MeshBasicMaterial({color: 0xffffff});
     main.marker.obj = new THREE.Mesh(main.marker.geo, main.marker.mat);
     main.marker.obj.position.z = 1.0;
     main.scene.add(main.marker.obj);
@@ -225,8 +225,8 @@ function handleKeyPress(e) {
 var mouseX = null;
 var mouseY = null;
 
-var previous_x = null;
-var previous_y = null;
+var previous_x = 0;
+var previous_y = 0;
 
 function handleMouseMove(e) {
     var size = Math.min(window.innerWidth, window.innerHeight);
@@ -245,8 +245,6 @@ function setupMouseHandlers() {
     $(document).mouseleave(function(e) {
         mouseX = null;
         mouseY = null;
-        previous_x = null;
-        previous_y = null;
         if (!options.pause)
             update();
     });
@@ -257,19 +255,67 @@ function render(now) {
 
     if (stats) stats.begin();
 
+    if (previous_x === null) {
+        previous_x = 0.0;
+        previous_y = 0.0;
+    }
+
     var x, y;
     if (options.auto && (!options.mouse || mouseX === null || mouseX > 1.0)) {
         if (!options.pause)
             update();
-        now /= 1000.0;
-        //var rSqrt = Math.cos(now * 0.23);
-        //var r = rSqrt * rSqrt;
-        //x = r * Math.cos(now);
-        //y = r * Math.sin(now);
+        //now /= 1000.0;
         //x = Math.cos(now * phi);
-        //y = Math.sin(now / phi);
-        x = Math.cos(now * phi);
-        y = Math.sin(now);
+        //y = Math.sin(now);
+        var best_x = previous_x;
+        var best_y = previous_y;
+        var best_i = -1;
+        var cx = previous_x;
+        var cy = previous_y;
+        // By taking the atan2 of x,-y we end up effectively adding 90
+        // degrees to the atan.  That means that our first point
+        // tested is in the counterclockwise direction.  There's a
+        // slight bias to earlier directions because in tied diff_i
+        // the earliest one wins, so this puts a slight bias to moving
+        // around the set.
+        var theta_ofs = Math.atan2(previous_x, -previous_y);
+        for (var circlefrac = 0; circlefrac < 480; circlefrac++) {
+            var theta = circlefrac * Math.PI / 240 + theta_ofs;
+            var test_x = previous_x + 0.05 * Math.cos(theta);
+            var test_y = previous_y + 0.05 * Math.sin(theta);
+            var zx = test_x;
+            var zy = test_y;
+            var i = 0;
+            while (i < 256) {
+                var diff_zx = zx * zx - zy * zy;
+                var diff_zy = 2 * zx * zy;
+                zx = diff_zx + cx;
+                zy = diff_zy + cy;
+                var dist2 = diff_zx * diff_zx + diff_zy * diff_zy;
+                if (dist2 > 4.0)
+                    break;
+                i++;
+            }
+            if (i < 256) {
+                var diff_i = 1000 - Math.abs(i - 100);
+                if (diff_i > best_i) {
+                    best_x = test_x;
+                    best_y = test_y;
+                    best_i = diff_i;
+                }
+            }
+        }
+        if (best_i == -1) {
+            x = previous_x + 0.1 * (Math.random() - 0.5);
+            y = previous_y + 0.1 * (Math.random() - 0.5);
+        } else {
+            var diff_x = best_x - previous_x;
+            var diff_y = best_y - previous_y;
+            x = previous_x + diff_x * 0.1;
+            y = previous_y + diff_y * 0.1;
+            x += 0.00001 * (Math.random() - 0.5);
+            y += 0.00001 * (Math.random() - 0.5);
+        }
     } else if (options.mouse) {
         x = mouseX;
         y = mouseY;
